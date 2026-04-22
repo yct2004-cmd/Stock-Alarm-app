@@ -1,5 +1,27 @@
+/**
+ * MarketDataService — singleton facade over the active market data provider.
+ *
+ * ## Provider selection (checked in order)
+ *   1. EXPO_PUBLIC_POLYGON_API_KEY   → PolygonProvider  (real-time on Basic+; EOD on free)
+ *   2. EXPO_PUBLIC_FINNHUB_API_KEY   → FinnhubProvider  (real-time on free tier)
+ *   3. (neither set)                 → MockMarketProvider (offline, deterministic data)
+ *
+ * ## Switching providers at runtime
+ *   marketDataService.setProvider(new FinnhubProvider(key));
+ *
+ * ## Adding a new provider
+ *   1. Implement `IMarketDataProvider` (src/services/market/interface.ts)
+ *   2. Call `marketDataService.setProvider(new YourProvider())` in App.tsx
+ *      (or add another env-var branch in the constructor below)
+ *
+ * Screens, hooks, and stores NEVER import provider classes directly.
+ * They only import from this file.
+ */
+
 import type { IMarketDataProvider } from './interface';
 import { MockMarketProvider } from './mock/MockMarketProvider';
+import { FinnhubProvider } from './providers/FinnhubProvider';
+import { PolygonProvider } from './providers/PolygonProvider';
 import type {
   StockSymbol,
   Quote,
@@ -10,28 +32,32 @@ import type {
   TimeRange,
 } from '../../types/models';
 
-/**
- * MarketDataService — singleton facade over the active data provider.
- *
- * ## Switching to a real provider
- * 1. Create a new class implementing `IMarketDataProvider`
- * 2. Set it via `MarketDataService.setProvider(new RealProvider())`
- *    (e.g., in app bootstrap, reading from env vars)
- *
- * The rest of the app (hooks, stores, screens) never imports provider classes
- * directly — they only import from this file.
- */
+function createProvider(): IMarketDataProvider {
+  const polygonKey = process.env.EXPO_PUBLIC_POLYGON_API_KEY;
+  const finnhubKey = process.env.EXPO_PUBLIC_FINNHUB_API_KEY;
+
+  if (polygonKey) {
+    console.log('[MarketDataService] Using PolygonProvider');
+    return new PolygonProvider(polygonKey);
+  }
+
+  if (finnhubKey) {
+    console.log('[MarketDataService] Using FinnhubProvider');
+    return new FinnhubProvider(finnhubKey);
+  }
+
+  console.log('[MarketDataService] No API key found — using MockMarketProvider');
+  return new MockMarketProvider();
+}
+
 class MarketDataService {
   private provider: IMarketDataProvider;
 
   constructor() {
-    // TODO: Replace MockMarketProvider with a real provider when credentials are available.
-    //   Example:
-    //   const apiKey = process.env.EXPO_PUBLIC_POLYGON_API_KEY;
-    //   this.provider = apiKey ? new PolygonProvider(apiKey) : new MockMarketProvider();
-    this.provider = new MockMarketProvider();
+    this.provider = createProvider();
   }
 
+  /** Replace the active provider at runtime (e.g., after login, user selects a data tier). */
   setProvider(p: IMarketDataProvider): void {
     this.provider = p;
   }

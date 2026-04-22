@@ -3,8 +3,9 @@ import { DeviceResponse, RegisterDevicePayload } from "../types/device";
 import Constants from "expo-constants";
 
 const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL ??
   ((Constants.expoConfig?.extra as { apiBaseUrl?: string } | undefined)?.apiBaseUrl ??
-    "http://127.0.0.1:8000/api/v1");
+    'http://127.0.0.1:8000/api/v1');
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
