@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+pandas
+yfinance
+python-dateutil
+pytest
+eval_type_backport
