@@ -1,18 +1,17 @@
-# Stock Alarm MVP
+# PulseMarkets
 
-A full-stack mobile MVP for stock/ETF/index price alerts.
+A production-quality stock alert mobile app for iPhone.
 
 ## Tech Stack
 
-- Mobile: React Native + Expo + TypeScript
-- Backend: FastAPI + SQLAlchemy + pandas + yfinance
-- Database: SQLite (MVP)
-- Push: Expo Push Notifications
+**Mobile (mobile/):** React Native + Expo SDK 54 + TypeScript, React Navigation 7, Zustand, TanStack Query v5, React Hook Form + Zod, AsyncStorage, react-native-chart-kit, Expo Notifications
+
+**Backend (backend/):** FastAPI + SQLAlchemy + pandas + yfinance, SQLite, Expo Push Notifications
 
 ## Project Structure
 
-- `backend`: FastAPI service, alert engine, polling job
-- `mobile`: Expo app with alert UI and push token registration
+- `backend/` — FastAPI service, alert engine, background polling job
+- `mobile/` — Full Expo app (PulseMarkets)
 
 ## Quick Start
 

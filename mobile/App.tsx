@@ -1,94 +1,124 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { Alert, SafeAreaView, StatusBar } from "react-native";
-import { AddAlertScreen } from "./src/screens/AddAlertScreen";
-import { HomeScreen } from "./src/screens/HomeScreen";
+import 'react-native-gesture-handler'; // Must be the very first import
+import React, { useEffect } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+
+import RootNavigator from './src/navigation/RootNavigator';
+import { ThemeContext, useThemeContextValue } from './src/hooks/useTheme';
+import { useAppHydration } from './src/hooks/useAppHydration';
+import { useAlertEngine } from './src/hooks/useAlertEngine';
 import {
-  createAlert,
-  deleteAlert,
-  listAlerts,
-  registerDevice,
-  toggleAlert,
-} from "./src/services/api";
-import { registerForPushNotificationsAsync } from "./src/services/notifications";
-import { AlertItem, CreateAlertPayload } from "./src/types/alert";
+  registerPushToken,
+  addNotificationResponseListener,
+  addNotificationReceivedListener,
+} from './src/services/notifications/NotificationService';
+import { lightColors, darkColors } from './src/constants/theme';
 
-type ScreenName = "home" | "add";
+// ─── TanStack Query client ────────────────────────────────────────────────────
 
-export default function App() {
-  const [screen, setScreen] = useState<ScreenName>("home");
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 15_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+    },
+    mutations: {
+      retry: 1,
+    },
+  },
+});
 
-  const fetchAlerts = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const items = await listAlerts();
-      setAlerts(items);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load alerts.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+// ─── Inner app — needs store access for theme ─────────────────────────────────
 
+function AppInner() {
+  const themeValue = useThemeContextValue();
+  const isReady = useAppHydration();
+
+  // Start alert evaluation loop (pauses when app is backgrounded)
+  useAlertEngine();
+
+  // Initialize push notification infrastructure once hydration is complete
   useEffect(() => {
-    fetchAlerts();
-  }, [fetchAlerts]);
+    if (!isReady) return;
+    registerPushToken().catch(() => {/* silent — permissions may not be granted */});
+    const responseSub = addNotificationResponseListener((_response) => {
+      // Deep-link handling: navigate to relevant alert detail when user taps a notification
+      // Deferred until a real navigation ref is wired in
+    });
+    const receivedSub = addNotificationReceivedListener((_notification) => {
+      // Foreground notification received — already added to in-app center by useAlertEngine
+    });
+    return () => {
+      responseSub.remove();
+      receivedSub.remove();
+    };
+  }, [isReady]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await registerForPushNotificationsAsync();
-        if (!token) return;
-        await registerDevice({ expo_push_token: token });
-      } catch (e) {
-        console.log("Push token registration failed:", e);
+  const navTheme = themeValue.isDark
+    ? {
+        ...DarkTheme,
+        colors: {
+          ...DarkTheme.colors,
+          background: darkColors.background,
+          card: darkColors.surface,
+          border: darkColors.border,
+          text: darkColors.textPrimary,
+          primary: darkColors.primary,
+          notification: '#EF4444',
+        },
       }
-    })();
-  }, []);
+    : {
+        ...DefaultTheme,
+        colors: {
+          ...DefaultTheme.colors,
+          background: lightColors.background,
+          card: lightColors.surface,
+          border: lightColors.border,
+          text: lightColors.textPrimary,
+          primary: lightColors.primary,
+          notification: '#EF4444',
+        },
+      };
 
-  const handleCreate = async (payload: CreateAlertPayload) => {
-    await createAlert(payload);
-    setScreen("home");
-    await fetchAlerts();
-  };
-
-  const handleToggle = async (item: AlertItem, nextEnabled: boolean) => {
-    try {
-      await toggleAlert(item.id, nextEnabled);
-      await fetchAlerts();
-    } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Failed to toggle alert.");
-    }
-  };
-
-  const handleDelete = async (item: AlertItem) => {
-    try {
-      await deleteAlert(item.id);
-      await fetchAlerts();
-    } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Failed to delete alert.");
-    }
-  };
+  if (!isReady) {
+    return (
+      <View style={[styles.splash, { backgroundColor: themeValue.colors.background }]}>
+        <ActivityIndicator color={themeValue.colors.primary} size="large" />
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <StatusBar barStyle="dark-content" />
-      {screen === "home" ? (
-        <HomeScreen
-          alerts={alerts}
-          loading={loading}
-          error={error}
-          onRefresh={fetchAlerts}
-          onAddPress={() => setScreen("add")}
-          onToggle={handleToggle}
-          onDelete={handleDelete}
-        />
-      ) : (
-        <AddAlertScreen onCancel={() => setScreen("home")} onSubmit={handleCreate} />
-      )}
-    </SafeAreaView>
+    <ThemeContext.Provider value={themeValue}>
+      <NavigationContainer theme={navTheme}>
+        <StatusBar style={themeValue.isDark ? 'light' : 'dark'} />
+        <RootNavigator />
+      </NavigationContainer>
+    </ThemeContext.Provider>
   );
 }
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppInner />
+      </QueryClientProvider>
+    </SafeAreaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});
